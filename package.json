@@ -12,7 +12,5 @@
     "start": "npm run start --workspace=apps/backend"
   },
   "dependencies": {
-    "playwright": "^1.58.2",
-    "puppeteer": "^24.40.0"
   }
 }

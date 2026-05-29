@@ -570,7 +570,7 @@ function App() {
           )}
         </div>
 
-        {/* Right: Fort Cards & Logs */}
+          {/* Right: Fort Cards & Logs */}
         <div className={`w-full lg:w-72 flex flex-col gap-4 flex-shrink-0 z-20 transition-all duration-300 ${isSidebarCollapsed ? 'max-h-[40px] lg:max-h-full overflow-hidden lg:overflow-visible' : 'max-h-[800px]'}`}>
            {/* Mobile Collapse Toggle */}
            <button 
@@ -581,6 +581,7 @@ function App() {
              <span>{isSidebarCollapsed ? '▼ Expand' : '▲ Collapse'}</span>
            </button>
 
+          {gameState.phase !== 'lobby' ? (<>
            {/* Fort Cards Compact View */}
            <div className={`bg-white rounded-lg shadow-md border-t-4 border-orange-400 overflow-hidden flex-col flex-shrink-0 ${isSidebarCollapsed ? 'hidden lg:flex' : 'flex'}`}>
              <div className="bg-orange-50 px-4 py-2 border-b flex justify-between items-center text-sm font-bold text-orange-900">
@@ -591,7 +592,7 @@ function App() {
                {/* Deck/Face Down Summary */}
                <div className="flex flex-col gap-2 border-r border-gray-200 pr-4">
                  <div className="text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Row Left</div>
-                 <div className="text-3xl font-black text-gray-800 text-center">{gameState.fortCardRow.length - gameState.faceUpFortCards}</div>
+                 <div className="text-3xl font-black text-gray-800 text-center">{Math.max(0, gameState.fortCardRow.length - gameState.faceUpFortCards)}</div>
                  <div className="text-[10px] text-gray-400 text-center">Deck: {gameState.fortCardDeck.length}</div>
                </div>
 
@@ -631,6 +632,11 @@ function App() {
                </ul>
              </div>
            </div>
+        </>) : (
+            <div className="bg-white rounded-lg shadow-md border-t-4 border-gray-300 overflow-hidden flex-col flex-shrink-0 p-6 text-center text-gray-400 italic text-sm">
+              Game not started yet
+            </div>
+          )}
         </div>
       </div>
 
@@ -666,7 +672,12 @@ function App() {
                 
                 {isSelected && card.effectType !== 'sentinel' && (
                    <div className="absolute bottom-0 left-0 w-full bg-yellow-400 text-yellow-900 text-[9px] font-bold py-1 text-center animate-pulse shadow-inner">
-                     CLICK MAP
+                     {
+                       card.effectType === 'place_fort' ? 'CLICK FORT SPACE' :
+                       card.effectType === 'place_ship' ? 'CLICK HARBOR' :
+                       card.effectType === 'take_token' ? 'CLICK PROVINCE W/ TOKEN' :
+                       'CLICK PROVINCE'
+                     }
                    </div>
                 )}
               </button>
