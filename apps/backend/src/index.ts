@@ -2,7 +2,7 @@ import express from 'express';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
-import { GameState, createNewGame, startGame, applyAction, PlayerAction, Color } from '@sardegna/shared';
+import { GameState, createNewGame, startGame, applyAction, PlayerAction, Color, getBotAction } from '@sardegna/shared';
 import path from 'path';
 
 const app = express();
@@ -31,68 +31,28 @@ function handleBotTurn(gameId: string) {
   const activePlayer = game.players.find((p: any) => p.id === game.activePlayerId);
   if (!activePlayer || !activePlayer.isBot) return;
 
-  // It's a bot's turn! Wait a short delay to simulate "thinking", then play a card
   setTimeout(() => {
-    // Re-fetch state in case it changed
     const currentGameState = games[gameId];
     if (!currentGameState) return;
     if (currentGameState.phase !== 'playing' && currentGameState.phase !== 'sentinel_reveal') return;
-    
+
     const botPlayer = currentGameState.players.find((p: any) => p.id === currentGameState.activePlayerId);
     if (!botPlayer || !botPlayer.isBot) return;
-    
-    // Handle Sentinel Reveal phase
-    if (currentGameState.phase === 'sentinel_reveal') {
-       const action: PlayerAction = {
-         type: 'SENTINEL_REVEAL',
-         playerId: botPlayer.id,
-         payload: { keep: Math.random() > 0.5 }
-       };
-       try {
-         games[gameId] = applyAction(currentGameState, action);
-         io.to(gameId).emit('gameStateUpdate', games[gameId]);
-         handleBotTurn(gameId);
-       } catch (err) {
-         console.error("Bot action error:", err);
-       }
-       return;
+
+    const action = getBotAction(currentGameState, botPlayer.id);
+    if (!action) {
+      console.log(`Bot ${botPlayer.name} has no valid actions. Skipping turn.`);
+      return;
     }
 
-    // Choose a random available card
-    if (botPlayer.availableCards.length > 0) {
-      const randomCardIndex = Math.floor(Math.random() * botPlayer.availableCards.length);
-      const chosenCard = botPlayer.availableCards[randomCardIndex];
-      
-      // Give bot a valid random target depending on card effect
-      const payload: any = {};
-      if (chosenCard.effectType === 'place_fort') {
-          const fortIds = Object.keys(currentGameState.fortSpaces || {});
-          payload.targetId = fortIds[Math.floor(Math.random() * fortIds.length)];
-          payload.targetType = 'fortSpace';
-      } else if (chosenCard.effectType !== 'sentinel') {
-          const provIds = Object.keys(currentGameState.provinces || {});
-          payload.targetId = provIds[Math.floor(Math.random() * provIds.length)];
-          payload.targetType = 'province';
-      }
-
-      const action: PlayerAction = {
-        type: 'PLAY_CARD',
-        playerId: botPlayer.id,
-        cardId: chosenCard.id,
-        payload
-      };
-      
-      try {
-        games[gameId] = applyAction(currentGameState, action);
-        io.to(gameId).emit('gameStateUpdate', games[gameId]);
-        
-        // After applying action, the turn might pass to another bot
-        handleBotTurn(gameId);
-      } catch (err) {
-        console.error("Bot action error:", err);
-      }
+    try {
+      games[gameId] = applyAction(currentGameState, action);
+      io.to(gameId).emit('gameStateUpdate', games[gameId]);
+      handleBotTurn(gameId);
+    } catch (err) {
+      console.error("Bot action error:", err);
     }
-  }, 1500); // 1.5s delay
+  }, 1500);
 }
 
 // REST Endpoints
