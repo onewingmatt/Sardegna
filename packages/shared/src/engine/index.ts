@@ -210,30 +210,118 @@ export function applyAction(state: GameState, action: PlayerAction): GameState {
       return triggerSentinel(state);
     }
 
+    // Queen: copy a previously played card (since last Sentinel)
+    if (card.effectType === 'queen') {
+      const copiedCardId = action.payload?.copiedCardId;
+      if (!copiedCardId) {
+        throw new Error('Queen requires a copiedCardId in payload');
+      }
+      const copiedCard = player.playedCards.find(c => c.id === copiedCardId);
+      if (!copiedCard) {
+        throw new Error(`Copied card ${copiedCardId} not found in played cards`);
+      }
+      // Queen cannot copy Sentinel or itself
+      if (copiedCard.effectType === 'sentinel') {
+        throw new Error('Queen cannot copy the Sentinel card');
+      }
+      if (copiedCard.effectType === 'queen') {
+        throw new Error('Queen cannot copy another Queen');
+      }
+      state.log.push(`${player.name} played Queen copying ${copiedCard.name}`);
+      // Override card's effectType to the copied card's effect
+      card.effectType = copiedCard.effectType;
+      state.log.push(`${player.name} uses Queen to ${copiedCard.name}'s effect`);
+      // Fall through to normal effect handling
+    }
+
+    // Architect: can place a fort OR a village depending on targetType
+    if (card.effectType === 'architect') {
+      if (action.payload?.targetType === 'fortSpace') {
+        card.effectType = 'place_fort';
+      } else if (action.payload?.targetType === 'province') {
+        card.effectType = 'place_village';
+      } else {
+        throw new Error('Architect requires targetType "fortSpace" or "province"');
+      }
+      state.log.push(`${player.name} uses Architect to ${card.effectType === 'place_fort' ? 'place a fort' : 'place a village'}`);
+      // Fall through to normal effect handling
+    }
+
     if (action.payload && action.payload.targetId) {
       const { targetId, targetType } = action.payload;
       
       if (targetType === 'province' && state.provinces[targetId]) {
          
-         // Handle Farmer card: Take agriculture token
+         // Handle Farmer card: Harvest agriculture token
          if (card.effectType === 'take_token') {
-             if (!state.provinces[targetId].hasAgricultureToken) {
-                 throw new Error(`Province ${state.provinces[targetId].name} no longer has an agriculture token`);
+             const province = state.provinces[targetId];
+             if (!province.hasAgricultureToken) {
+                 throw new Error(`Province ${province.name} no longer has an agriculture token`);
              }
-             // Take it
-             state.provinces[targetId].hasAgricultureToken = false;
-             const specificToken = state.provinces[targetId].specificToken;
+             
+             // Check: farmer must have a villager in the target province
+             const hasVillager = province.pieces.some(p => p.playerId === player.id && p.type === 'villager');
+             if (!hasVillager) {
+                 throw new Error(`Farmer requires one of your villagers in the target province (${province.name})`);
+             }
+             
+             // Check: must choose a harbor with your ship, and province must be reachable
+             const harborsWithShip = Object.values(state.harbors).filter(h => h.ships.some(s => s.playerId === player.id));
+             if (harborsWithShip.length === 0) {
+                 throw new Error('Farmer requires one of your ships in a harbor');
+             }
+             
+             // BFS to find all provinces reachable from each harbor via unbroken chain of player's villagers
+             const reachableProvinces = new Set<string>();
+             for (const harbor of harborsWithShip) {
+                 const queue = [...harbor.adjacentProvinces];
+                 const visited = new Set<string>();
+                 while (queue.length > 0) {
+                     const pId = queue.shift()!;
+                     if (visited.has(pId)) continue;
+                     visited.add(pId);
+                     
+                     // This province is reachable (it's adjacent to harbor or connected via villager chain)
+                     reachableProvinces.add(pId);
+                     
+                     // Can we continue the chain through this province?
+                     const prov = state.provinces[pId];
+                     if (prov && prov.pieces.some(p => p.playerId === player.id && p.type === 'villager')) {
+                         for (const adjId of prov.adjacentProvinces) {
+                             if (!visited.has(adjId)) {
+                                 queue.push(adjId);
+                             }
+                         }
+                     }
+                 }
+             }
+             
+             if (!reachableProvinces.has(targetId)) {
+                 throw new Error(`Province ${province.name} is not reachable from any of your harbors via a chain of your villagers`);
+             }
+             
+             // Take the token
+             province.hasAgricultureToken = false;
+             const specificToken = province.specificToken;
+             let tokenType: string;
              if (specificToken) {
+                 tokenType = specificToken;
                  player.tokens[specificToken]++;
-                 state.log.push(`${player.name} took a ${specificToken} token from ${state.provinces[targetId].name}`);
              } else {
-                 // Fallback for old game states without specific tokens mapped
-                 const res = state.provinces[targetId].resource;
-                 if (res === 'wheat') player.tokens.wheat++;
-                 else if (res === 'wine_olive') player.tokens.wine++;
-                 else if (res === 'thyme_cheese') player.tokens.cheese++;
-                 state.log.push(`${player.name} took a generic token from ${state.provinces[targetId].name}`);
+                 // Fallback for legacy game states
+                 const res = province.resource;
+                 if (res === 'wheat') { player.tokens.wheat++; tokenType = 'wheat'; }
+                 else if (res === 'wine_olive') { player.tokens.wine++; tokenType = 'wine'; }
+                 else if (res === 'thyme_cheese') { player.tokens.cheese++; tokenType = 'cheese'; }
+                 else { tokenType = 'unknown'; }
              }
+             
+             // Score VP: 1st token of each type = 1 VP, 2nd = 2 VP, 3rd = 3 VP, 4th = 4 VP
+             const count = player.tokens[tokenType] || 0;
+             const vpGained = count; // count is after increment, so 1→1VP, 2→2VP, 3→3VP, 4→4VP
+             player.score += vpGained;
+             
+             state.log.push(`${player.name} harvested a ${tokenType} token from ${province.name} for +${vpGained} VP (${count} total ${tokenType})`);
              nextTurn(state);
              return state;
          }
@@ -246,8 +334,78 @@ export function applyAction(state: GameState, action: PlayerAction): GameState {
          const pieceType = typeMap[card.effectType] || 'villager';
          const reserveKey = pieceType === 'villager' ? 'villagers' : pieceType === 'village' ? 'villages' : 'priests';
 
+         // Handle move mode (Commander or Priest moving existing pieces)
+         if (action.payload?.mode === 'move') {
+           const sourceProvinceId = action.payload.sourceProvinceId;
+           if (!sourceProvinceId || !state.provinces[sourceProvinceId]) {
+             throw new Error('Move requires a valid sourceProvinceId');
+           }
+           // Check source has player's piece of the right type
+           const sourceProvince = state.provinces[sourceProvinceId];
+           const pieceIndex = sourceProvince.pieces.findIndex(
+             pc => pc.playerId === player.id && pc.type === pieceType
+           );
+           if (pieceIndex === -1) {
+             throw new Error(`No ${pieceType} of yours found in ${sourceProvince.name} to move`);
+           }
+           // Check destination not full
+           if (state.provinces[targetId].pieces.length >= 7) {
+             throw new Error(`Province ${state.provinces[targetId].name} is full (max 7 pieces)`);
+           }
+           // Check movement distance
+           const maxMove = pieceType === 'priest' ? 3 : 4;
+           const dist = shortestPathLength(state, sourceProvinceId, targetId, maxMove);
+           if (dist < 0 || dist > maxMove) {
+             throw new Error(`Destination too far — ${pieceType} can move at most ${maxMove} steps (found ${dist < 0 ? 'no path' : dist})`);
+           }
+           // Priest blocking applies to villagers/villages moving INTO a province
+           if (pieceType === 'villager' || pieceType === 'village') {
+             const oppHasPriest = state.provinces[targetId].pieces.some(
+               pc => pc.type === 'priest' && pc.playerId !== player.id
+             );
+             const weHavePriest = state.provinces[targetId].pieces.some(
+               pc => pc.type === 'priest' && pc.playerId === player.id
+             );
+             if (oppHasPriest && !weHavePriest) {
+               throw new Error(`An opponent's priest in ${state.provinces[targetId].name} blocks moving ${pieceType}s there`);
+             }
+           }
+           // Execute move: remove from source, add to destination
+           const [movedPiece] = sourceProvince.pieces.splice(pieceIndex, 1);
+           state.provinces[targetId].pieces.push(movedPiece);
+           state.log.push(`${player.name} moved ${pieceType} from ${sourceProvince.name} to ${state.provinces[targetId].name} (${dist} step${dist !== 1 ? 's' : ''})`);
+           nextTurn(state);
+           return state;
+         }
+
          if (state.provinces[targetId].pieces.length >= 7) {
              throw new Error(`Province ${state.provinces[targetId].name} is full (max 7 pieces)`);
+         }
+         
+         // Priest blocking rule: an opponent's priest in this province blocks placing villages/villagers
+         // unless we also have a priest here
+         if (pieceType === 'villager' || pieceType === 'village') {
+           const oppHasPriest = state.provinces[targetId].pieces.some(
+             pc => pc.type === 'priest' && pc.playerId !== player.id
+           );
+           const weHavePriest = state.provinces[targetId].pieces.some(
+             pc => pc.type === 'priest' && pc.playerId === player.id
+           );
+           if (oppHasPriest && !weHavePriest) {
+             throw new Error(`An opponent's priest in ${state.provinces[targetId].name} blocks placing villages or villagers there`);
+           }
+         }
+         
+         // Architect rule: max villages in play = harvested agriculture tokens
+         if (pieceType === 'village') {
+           const totalTokens = Object.values(player.tokens).reduce((sum, count) => sum + count, 0);
+           const villagesOnBoard = Object.values(state.provinces)
+             .flatMap(p => p.pieces)
+             .filter(pc => pc.playerId === player.id && pc.type === 'village')
+             .length;
+           if (villagesOnBoard >= totalTokens) {
+             throw new Error(`Maximum villages (${totalTokens}) reached — need more agriculture tokens (have ${totalTokens}, board has ${villagesOnBoard})`);
+           }
          }
          
          if (player.reserves[reserveKey] <= 0) {
@@ -274,7 +432,34 @@ export function applyAction(state: GameState, action: PlayerAction): GameState {
          state.log.push(`${player.name} placed a fort at ${targetId}`);
       } else if (targetType === 'harbor' && state.harbors[targetId] && card.effectType === 'place_ship') {
          const harbor = state.harbors[targetId];
-         // Max 2 ships per harbor (or 1 in a 2-player game - for MVP we assume up to 4 players)
+         
+         // Handle Admiral move mode: move a ship from one harbor to another
+         if (action.payload?.mode === 'move') {
+           const sourceHarborId = action.payload.sourceHarborId;
+           if (!sourceHarborId || !state.harbors[sourceHarborId]) {
+             throw new Error('Move requires a valid sourceHarborId');
+           }
+           const sourceHarbor = state.harbors[sourceHarborId];
+           const shipIndex = sourceHarbor.ships.findIndex(s => s.playerId === player.id);
+           if (shipIndex === -1) {
+             throw new Error(`No ship of yours found in harbor ${sourceHarborId} to move`);
+           }
+           const maxShips = state.players.length === 2 ? 1 : 2;
+           if (harbor.ships.length >= maxShips) {
+             throw new Error(`Harbor ${targetId} is already full`);
+           }
+           if (harbor.ships.some(s => s.playerId === player.id)) {
+             throw new Error(`You already have a ship in harbor ${targetId}`);
+           }
+           // Execute move
+           const [movedShip] = sourceHarbor.ships.splice(shipIndex, 1);
+           harbor.ships.push(movedShip);
+           state.log.push(`${player.name} moved a ship from harbor ${sourceHarborId} to harbor ${targetId}`);
+           nextTurn(state);
+           return state;
+         }
+         
+         // Max 2 ships per harbor (or 1 in a 2-player game)
          const maxShips = state.players.length === 2 ? 1 : 2;
          if (harbor.ships.length >= maxShips) {
              throw new Error(`Harbor ${targetId} is already full`);
@@ -331,6 +516,27 @@ export function applyAction(state: GameState, action: PlayerAction): GameState {
   }
 
   return state;
+}
+
+/** BFS to check if destination province is reachable from source within maxSteps. Returns shortest distance or -1. */
+function shortestPathLength(state: GameState, fromId: string, toId: string, maxSteps: number): number {
+  if (fromId === toId) return 0;
+  const queue: { id: string; dist: number }[] = [{ id: fromId, dist: 0 }];
+  const visited = new Set<string>([fromId]);
+  while (queue.length > 0) {
+    const { id, dist } = queue.shift()!;
+    if (dist >= maxSteps) continue;
+    const province = state.provinces[id];
+    if (!province) continue;
+    for (const adjId of province.adjacentProvinces) {
+      if (adjId === toId) return dist + 1;
+      if (!visited.has(adjId)) {
+        visited.add(adjId);
+        queue.push({ id: adjId, dist: dist + 1 });
+      }
+    }
+  }
+  return -1;
 }
 
 function nextTurn(state: GameState) {
@@ -400,14 +606,14 @@ function scoreFortCard(state: GameState, fortCard: FortCard) {
     for (const piece of province.pieces) {
       if (piece.type === 'villager') influence[piece.playerId] += 1;
       if (piece.type === 'village') influence[piece.playerId] += 2;
-      if (piece.type === 'priest') influence[piece.playerId] += 3;
+      if (piece.type === 'priest') influence[piece.playerId] += 1;
     }
 
     // 2. Adjacent Forts
     for (const fId of province.adjacentFortSpaces) {
       const fortSpace = state.fortSpaces[fId];
       if (fortSpace && fortSpace.forts.length > 0) {
-        influence[fortSpace.forts[0].playerId] += 2;
+        influence[fortSpace.forts[0].playerId] += 1;
       }
     }
 
@@ -435,48 +641,45 @@ function scoreFortCard(state: GameState, fortCard: FortCard) {
     const highestInfluence = influence[sorted[0].id];
     const tiedForFirst = sorted.filter(p => influence[p.id] === highestInfluence);
     
-    // Scoring rules:
-    // If only 1 player has influence, they get 1st place VP (4 VP)
-    // If multiple tied for 1st, they all get 2 VP, and no 2nd place is awarded.
-    // If 1 clear 1st place, they get 4 VP. Then look at 2nd place.
-    // If multiple tied for 2nd, they get 0 VP. 1 clear 2nd gets 2 VP.
-    // In 2 player game, 2nd place only gets VP if they have at least half the influence of 1st place.
+    // Scoring rules (per official rulebook):
+    // - Players with most influence get FULL VP of the province.
+    // - Players with second-highest influence get HALF VP (rounded down).
+    // - If tied for most influence: all tied get FULL VP, no second place awarded.
+    // - If tied for second-highest: all tied get half VP.
+    // - Two-player game: no second place VP at all.
 
     const vp1 = province.vp1;
     const vp2 = Math.floor(province.vp1 / 2);
 
     if (tiedForFirst.length > 1) {
-      // Tie for 1st
+      // Tie for 1st — all tied get FULL VP (rulebook example A)
       tiedForFirst.forEach(p => {
-        p.score += vp2;
-        state.log.push(`Province ${province.name}: ${p.name} tied for 1st (${highestInfluence} inf) -> +${vp2} VP`);
+        p.score += vp1;
+        state.log.push(`Province ${province.name}: ${p.name} tied for 1st (${highestInfluence} inf) -> +${vp1} VP`);
       });
+      // No second place awarded when first is tied
     } else {
       // Clear 1st
       const first = tiedForFirst[0];
       first.score += vp1;
       state.log.push(`Province ${province.name}: ${first.name} is 1st (${highestInfluence} inf) -> +${vp1} VP`);
       
-      // Look for 2nd
-      if (sorted.length > 1) {
+      // Look for 2nd place (only if not a 2-player game)
+      if (sorted.length > 1 && state.players.length !== 2) {
         const secondInfluence = influence[sorted[1].id];
         const tiedForSecond = sorted.filter(p => influence[p.id] === secondInfluence);
         
+        // All tied for 2nd get half VP each (rulebook example B: both Purple and Green got 2 VP)
+        tiedForSecond.forEach(p => {
+          p.score += vp2;
+        });
         if (tiedForSecond.length === 1) {
-           const second = tiedForSecond[0];
-           let getsVP = true;
-           // 2-player exception
-           if (state.players.length === 2 && secondInfluence < Math.floor(highestInfluence / 2)) {
-               getsVP = false;
-               state.log.push(`Province ${province.name}: ${second.name} is 2nd but lacks half of 1st's influence -> +0 VP`);
-           }
-           if (getsVP) {
-               second.score += vp2;
-               state.log.push(`Province ${province.name}: ${second.name} is 2nd (${secondInfluence} inf) -> +${vp2} VP`);
-           }
+          state.log.push(`Province ${province.name}: ${tiedForSecond[0].name} is 2nd (${secondInfluence} inf) -> +${vp2} VP`);
         } else {
-           state.log.push(`Province ${province.name}: Multiple tied for 2nd -> +0 VP`);
+          state.log.push(`Province ${province.name}: ${tiedForSecond.map(p => p.name).join(', ')} tied for 2nd (${secondInfluence} inf) -> +${vp2} VP each`);
         }
+      } else if (sorted.length > 1 && state.players.length === 2) {
+        state.log.push(`Province ${province.name}: 2-player game -> no 2nd place VP`);
       }
     }
   }

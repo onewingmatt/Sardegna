@@ -94,15 +94,15 @@ io.on('connection', (socket: Socket) => {
         return;
       }
       
-      // Starter hand skeleton
+      // Starter hand skeleton (official Sardegna card set)
       const starterHand = [
-        { id: 'c1', name: 'Priest', effectDescription: 'Place 1 Priest or Move 1 Priest up to 3 spaces', effectType: 'move_priest' },
-        { id: 'c2', name: 'Sentinel', effectDescription: 'Score leftmost face-up Fort Card', effectType: 'sentinel' },
-        { id: 'c3', name: 'Villager', effectDescription: 'Place 1 Villager', effectType: 'place_villager' },
-        { id: 'c4', name: 'Village', effectDescription: 'Place 1 Village', effectType: 'place_village' },
-        { id: 'c5', name: 'Ship', effectDescription: 'Place 1 Ship in a Harbor', effectType: 'place_ship' },
-        { id: 'c6', name: 'Fort', effectDescription: 'Place 1 Fort on a Fort Space', effectType: 'place_fort' },
-        { id: 'c7', name: 'Farmer', effectDescription: 'Take 1 Agriculture Token', effectType: 'take_token' }
+        { id: 'c1', name: 'Commander', effectDescription: 'Add 1 villager to a province OR move your villagers up to 4 times', effectType: 'place_villager' },
+        { id: 'c2', name: 'Sentinel', effectDescription: 'Initiate province scoring on the leftmost fort card', effectType: 'sentinel' },
+        { id: 'c3', name: 'Admiral', effectDescription: 'Add 1 ship to a harbor OR move any of your ships', effectType: 'place_ship' },
+        { id: 'c4', name: 'Priest', effectDescription: 'Add your priest to a province OR move your priest up to 3 times', effectType: 'move_priest' },
+        { id: 'c5', name: 'Architect', effectDescription: 'Add 1 fort to an empty fort space OR add 1 village to a province', effectType: 'architect' },
+        { id: 'c6', name: 'Queen', effectDescription: 'Copy any action from a character card you have played', effectType: 'queen' },
+        { id: 'c7', name: 'Farmer', effectDescription: 'Harvest 1 agriculture token from a reachable province', effectType: 'take_token' }
       ];
 
       game.players.push({
@@ -142,13 +142,13 @@ io.on('connection', (socket: Socket) => {
     const botColor = availableColors.find(c => !usedColors.includes(c)) || 'red';
     
     const starterHand = [
-        { id: 'c1', name: 'Priest', effectDescription: 'Place 1 Priest or Move 1 Priest up to 3 spaces', effectType: 'move_priest' },
-        { id: 'c2', name: 'Sentinel', effectDescription: 'Score leftmost face-up Fort Card', effectType: 'sentinel' },
-        { id: 'c3', name: 'Villager', effectDescription: 'Place 1 Villager', effectType: 'place_villager' },
-        { id: 'c4', name: 'Village', effectDescription: 'Place 1 Village', effectType: 'place_village' },
-        { id: 'c5', name: 'Ship', effectDescription: 'Place 1 Ship in a Harbor', effectType: 'place_ship' },
-        { id: 'c6', name: 'Fort', effectDescription: 'Place 1 Fort on a Fort Space', effectType: 'place_fort' },
-        { id: 'c7', name: 'Farmer', effectDescription: 'Take 1 Agriculture Token', effectType: 'take_token' }
+        { id: 'c1', name: 'Commander', effectDescription: 'Add 1 villager to a province OR move your villagers up to 4 times', effectType: 'place_villager' },
+        { id: 'c2', name: 'Sentinel', effectDescription: 'Initiate province scoring on the leftmost fort card', effectType: 'sentinel' },
+        { id: 'c3', name: 'Admiral', effectDescription: 'Add 1 ship to a harbor OR move any of your ships', effectType: 'place_ship' },
+        { id: 'c4', name: 'Priest', effectDescription: 'Add your priest to a province OR move your priest up to 3 times', effectType: 'move_priest' },
+        { id: 'c5', name: 'Architect', effectDescription: 'Add 1 fort to an empty fort space OR add 1 village to a province', effectType: 'architect' },
+        { id: 'c6', name: 'Queen', effectDescription: 'Copy any action from a character card you have played', effectType: 'queen' },
+        { id: 'c7', name: 'Farmer', effectDescription: 'Harvest 1 agriculture token from a reachable province', effectType: 'take_token' }
       ];
 
     game.players.push({

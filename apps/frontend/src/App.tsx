@@ -69,6 +69,10 @@ function App() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [playerId, setPlayerId] = useState<PlayerId>('');
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [queenCopyCardId, setQueenCopyCardId] = useState<string | null>(null);
+  const [architectMode, setArchitectMode] = useState<'fort' | 'village' | null>(null);
+  const [moveMode, setMoveMode] = useState<'place' | 'move' | null>(null);
+  const [sourcePieceId, setSourcePieceId] = useState<string | null>(null);
   const [playerName, setPlayerName] = useState('');
   const [color, setColor] = useState<Color>('red');
   const [gameId, setGameId] = useState('');
@@ -139,6 +143,8 @@ function App() {
       case 'place_village': return '🏘️';
       case 'place_ship': return '⛵';
       case 'place_fort': return '🏰';
+      case 'architect': return '🏗️';
+      case 'queen': return '👑';
       case 'take_token': return '🌾';
       default: return '🃏';
     }
@@ -152,7 +158,7 @@ function App() {
   const playCard = (card: any) => {
     if (!gameState) return;
     
-    // If it's the Sentinel card, it doesn't need a target, just play it
+    // Sentinel: play directly, no target needed
     if (card.effectType === 'sentinel') {
       const action: PlayerAction = {
         type: 'PLAY_CARD',
@@ -164,12 +170,73 @@ function App() {
       return;
     }
     
-    // Otherwise, we wait for the user to click a target on the map
+    // Queen: select card to copy from played cards first
+    if (card.effectType === 'queen') {
+      setSelectedCardId(card.id);
+      setQueenCopyCardId(null);
+      setArchitectMode(null);
+      return;
+    }
+    
+    // Architect: select mode (fort or village) first
+    if (card.effectType === 'architect') {
+      if (selectedCardId === card.id) {
+        setSelectedCardId(null);
+        setArchitectMode(null);
+      } else {
+        setSelectedCardId(card.id);
+        setArchitectMode(null);
+      }
+      return;
+    }
+    
+    // Admiral / Commander / Priest: choose place or move mode
+    if (card.effectType === 'place_ship' || card.effectType === 'place_villager' || card.effectType === 'move_priest') {
+      if (selectedCardId === card.id) {
+        setSelectedCardId(null);
+        setMoveMode(null);
+        setSourcePieceId(null);
+      } else {
+        setSelectedCardId(card.id);
+        setMoveMode(null);
+        setSourcePieceId(null);
+      }
+      return;
+    }
+    
+    // Other cards: toggle selection, then wait for map click
     if (selectedCardId === card.id) {
-       setSelectedCardId(null); // toggle off
+       setSelectedCardId(null);
+       setQueenCopyCardId(null);
     } else {
        setSelectedCardId(card.id);
+       setQueenCopyCardId(null);
+       setArchitectMode(null);
     }
+  };
+
+  // Handle clicking a played card to copy (Queen)
+  const selectQueenCopyTarget = (playedCard: any) => {
+    if (!gameState) return;
+    setQueenCopyCardId(playedCard.id);
+  };
+
+  // Handle setting Architect mode
+  const setArchitectAction = (mode: 'fort' | 'village') => {
+    setArchitectMode(mode);
+  };
+
+  // Handle setting move mode (place/move) for Admiral/Commander/Priest
+  const setMoveAction = (mode: 'place' | 'move') => {
+    setMoveMode(mode);
+    if (mode === 'place') {
+      setSourcePieceId(null); // No source needed for place
+    }
+  };
+
+  // Handle clicking a piece on the board to select as move source
+  const selectMoveSource = (provinceId: string) => {
+    setSourcePieceId(provinceId);
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -220,18 +287,60 @@ function App() {
   };
 
   const handleMapClick = (targetId: string, type: 'province' | 'fortSpace' | 'harbor') => {
-    if (!gameState || !selectedCardId) return;
+    if (!gameState || !selectedCardId || !currentPlayer) return;
 
-    // We have a pending card to play, and the user just clicked a map target
+    // -- Move mode source selection --
+    if (moveMode === 'move' && !sourcePieceId) {
+      // First click: select the source piece
+      const selectedCard = currentPlayer.availableCards.find(c => c.id === selectedCardId);
+      if (!selectedCard) return;
+      
+      if (type === 'harbor' && selectedCard.effectType === 'place_ship') {
+        const harbor = gameState.harbors[targetId];
+        if (harbor && harbor.ships.some(s => s.playerId === playerId)) {
+          setSourcePieceId(targetId);
+          return;
+        }
+      } else if (type === 'province' && (selectedCard.effectType === 'place_villager' || selectedCard.effectType === 'move_priest')) {
+        const province = gameState.provinces[targetId];
+        const pieceType = selectedCard.effectType === 'move_priest' ? 'priest' : 'villager';
+        if (province && province.pieces.some(p => p.playerId === playerId && p.type === pieceType)) {
+          setSourcePieceId(targetId);
+          return;
+        }
+      }
+      return; // Invalid source click, ignore
+    }
+
+    // -- Execute action (place or move to destination) --
+    const payload: any = { targetId, targetType: type };
+    if (queenCopyCardId) {
+      payload.copiedCardId = queenCopyCardId;
+    }
+    if (moveMode) {
+      payload.mode = moveMode;
+      if (sourcePieceId) {
+        if (type === 'harbor') {
+          payload.sourceHarborId = sourcePieceId;
+        } else {
+          payload.sourceProvinceId = sourcePieceId;
+        }
+      }
+    }
+    
     const action: PlayerAction = {
       type: 'PLAY_CARD',
       playerId,
       cardId: selectedCardId,
-      payload: { targetId, targetType: type }
+      payload
     };
     
     socket.emit('playerAction', { gameId: gameState.id, action });
-    setSelectedCardId(null); // reset UI state after sending
+    setSelectedCardId(null);
+    setQueenCopyCardId(null);
+    setArchitectMode(null);
+    setMoveMode(null);
+    setSourcePieceId(null);
   };
 
   if (!gameState) {
@@ -670,39 +779,144 @@ function App() {
                    {card.effectDescription}
                 </div>
                 
-                {isSelected && card.effectType !== 'sentinel' && (
+                {isSelected && card.effectType !== 'sentinel' && card.effectType !== 'queen' && card.effectType !== 'architect' && card.effectType !== 'place_ship' && card.effectType !== 'place_villager' && card.effectType !== 'move_priest' && (
                    <div className="absolute bottom-0 left-0 w-full bg-yellow-400 text-yellow-900 text-[9px] font-bold py-1 text-center animate-pulse shadow-inner">
                      {
                        card.effectType === 'place_fort' ? 'CLICK FORT SPACE' :
-                       card.effectType === 'place_ship' ? 'CLICK HARBOR' :
                        card.effectType === 'take_token' ? 'CLICK PROVINCE W/ TOKEN' :
                        'CLICK PROVINCE'
                      }
+                   </div>
+                )}
+                {isSelected && (card.effectType === 'place_ship' || card.effectType === 'place_villager' || card.effectType === 'move_priest') && !moveMode && (
+                   <div className="absolute bottom-0 left-0 w-full bg-teal-500 text-white text-[9px] font-bold py-1 text-center animate-pulse shadow-inner">
+                     SELECT MODE BELOW
+                   </div>
+                )}
+                {isSelected && moveMode === 'place' && (card.effectType === 'place_ship' || card.effectType === 'place_villager' || card.effectType === 'move_priest') && (
+                   <div className="absolute bottom-0 left-0 w-full bg-yellow-400 text-yellow-900 text-[9px] font-bold py-1 text-center animate-pulse shadow-inner">
+                     {
+                       card.effectType === 'place_ship' ? 'CLICK HARBOR' :
+                       'CLICK PROVINCE'
+                     }
+                   </div>
+                )}
+                {isSelected && moveMode === 'move' && !sourcePieceId && (
+                   <div className="absolute bottom-0 left-0 w-full bg-purple-500 text-white text-[9px] font-bold py-1 text-center animate-pulse shadow-inner">
+                     {
+                       card.effectType === 'place_ship' ? 'CLICK A HARBOR WITH YOUR SHIP' :
+                       'CLICK A PROVINCE WITH YOUR PIECE'
+                     }
+                   </div>
+                )}
+                {isSelected && moveMode === 'move' && sourcePieceId && (
+                   <div className="absolute bottom-0 left-0 w-full bg-yellow-400 text-yellow-900 text-[9px] font-bold py-1 text-center animate-pulse shadow-inner">
+                     {
+                       card.effectType === 'place_ship' ? 'CLICK DESTINATION HARBOR' :
+                       'CLICK DESTINATION PROVINCE'
+                     }
+                   </div>
+                )}
+                {isSelected && card.effectType === 'queen' && !queenCopyCardId && (
+                   <div className="absolute bottom-0 left-0 w-full bg-purple-500 text-white text-[9px] font-bold py-1 text-center animate-pulse shadow-inner">
+                     SELECT A PLAYED CARD TO COPY
+                   </div>
+                )}
+                {isSelected && card.effectType === 'queen' && queenCopyCardId && (
+                   <div className="absolute bottom-0 left-0 w-full bg-yellow-400 text-yellow-900 text-[9px] font-bold py-1 text-center animate-pulse shadow-inner">
+                     CLICK MAP TARGET
+                   </div>
+                )}
+                {isSelected && card.effectType === 'architect' && !architectMode && (
+                   <div className="absolute bottom-0 left-0 w-full bg-orange-500 text-white text-[9px] font-bold py-1 text-center animate-pulse shadow-inner">
+                     SELECT MODE BELOW
                    </div>
                 )}
               </button>
               );
             })}
             
+            {/* Played cards — stacked; when Queen is selected, they become clickable */}
             {currentPlayer.playedCards && currentPlayer.playedCards.length > 0 && (
               <div className="flex-shrink-0 relative w-[120px] sm:w-[130px] h-[150px] sm:h-[160px]">
                 {currentPlayer.playedCards.map((playedCard: any, idx: number) => {
+                  const isQueenSelected = selectedCardId !== null && 
+                    gameState.activePlayerId === playerId &&
+                    currentPlayer.availableCards.find(c => c.id === selectedCardId)?.effectType === 'queen';
+                  const isCopyTarget = queenCopyCardId === playedCard.id;
                   const isTop = idx === currentPlayer.playedCards.length - 1;
+                  const canCopy = playedCard.effectType !== 'sentinel' && playedCard.effectType !== 'queen';
                   return (
-                    <div 
-                      key={idx} 
-                      className={`absolute top-0 left-0 w-full h-full bg-gray-100 border-[3px] border-dashed border-gray-400 rounded-xl shadow-md flex flex-col items-center justify-center p-2 opacity-70 overflow-hidden saturate-50`}
-                      style={{ transform: `translate(${idx * 4}px, ${idx * -4}px)`, zIndex: idx }}
+                    <button
+                      key={idx}
+                      disabled={!isQueenSelected || !canCopy}
+                      onClick={() => isQueenSelected && canCopy && selectQueenCopyTarget(playedCard)}
+                      className={`absolute top-0 left-0 w-full h-full rounded-xl shadow-md flex flex-col items-center justify-center p-2 overflow-hidden transition-all duration-200 ${
+                        isQueenSelected && canCopy ? 'cursor-pointer border-[3px] hover:-translate-y-2 hover:shadow-xl hover:z-50 hover:opacity-100 hover:saturate-100' : 'cursor-default'
+                      } ${
+                        isCopyTarget
+                          ? 'border-purple-500 ring-2 ring-purple-300 opacity-100 saturate-100 z-50 scale-110 translate-y-[-8px] bg-purple-50'
+                          : isQueenSelected && canCopy
+                          ? 'border-yellow-300 opacity-80 saturate-75 bg-gray-50'
+                          : 'border-[3px] border-dashed border-gray-400 opacity-70 saturate-50 bg-gray-100'
+                      }`}
+                      style={{ transform: isCopyTarget ? `translate(${idx * 4}px, ${idx * -4 - 8}px)` : `translate(${idx * 4}px, ${idx * -4}px)`, zIndex: isCopyTarget ? 100 : idx }}
                     >
-                      <div className="absolute inset-0 bg-gray-300 opacity-20 bg-[radial-gradient(#000_2px,transparent_2px)] [background-size:10px_10px] pointer-events-none"></div>
-                      <div className="text-3xl grayscale opacity-50 mb-2 drop-shadow-sm">{getCardIcon(playedCard.effectType)}</div>
-                      <div className="font-extrabold text-xs sm:text-sm text-gray-500 text-center uppercase mb-2 leading-tight">{playedCard.name}</div>
-                      {isTop && <div className="bg-gray-800 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow">PLAYED</div>}
-                    </div>
+                      {!(isQueenSelected && canCopy) && <div className="absolute inset-0 bg-gray-300 opacity-20 bg-[radial-gradient(#000_2px,transparent_2px)] [background-size:10px_10px] pointer-events-none"></div>}
+                      <div className="text-3xl mb-1 drop-shadow-sm">{getCardIcon(playedCard.effectType)}</div>
+                      <div className="font-extrabold text-xs sm:text-sm text-center uppercase mb-1 leading-tight">{playedCard.name}</div>
+                      {isCopyTarget && <div className="bg-purple-600 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest shadow">COPYING</div>}
+                      {!isCopyTarget && isTop && !isQueenSelected && <div className="bg-gray-800 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow">PLAYED</div>}
+                      {isQueenSelected && canCopy && !isCopyTarget && <div className="bg-yellow-500 text-yellow-900 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest shadow">CLICK TO COPY</div>}
+                    </button>
                   );
                 })}
               </div>
             )}
+            
+            {/* Architect mode selectors */}
+            {selectedCardId && currentPlayer.availableCards.find(c => c.id === selectedCardId)?.effectType === 'architect' && !architectMode && (
+              <div className="flex-shrink-0 flex flex-col gap-2 justify-center items-stretch w-[120px] sm:w-[130px]">
+                <button
+                  onClick={() => setArchitectAction('fort')}
+                  className="flex-1 bg-amber-100 border-2 border-amber-500 rounded-xl p-2 flex flex-col items-center justify-center hover:bg-amber-200 transition cursor-pointer min-h-[70px]"
+                >
+                  <span className="text-2xl">🏰</span>
+                  <span className="font-bold text-xs text-amber-900 uppercase mt-1">Fort</span>
+                </button>
+                <button
+                  onClick={() => setArchitectAction('village')}
+                  className="flex-1 bg-green-100 border-2 border-green-500 rounded-xl p-2 flex flex-col items-center justify-center hover:bg-green-200 transition cursor-pointer min-h-[70px]"
+                >
+                  <span className="text-2xl">🏘️</span>
+                  <span className="font-bold text-xs text-green-900 uppercase mt-1">Village</span>
+                </button>
+              </div>
+            )}
+            
+            {/* Move mode selectors (Admiral / Commander / Priest) */}
+            {selectedCardId && (() => {
+              const selCard = currentPlayer.availableCards.find(c => c.id === selectedCardId);
+              const isMoveCard = selCard && (selCard.effectType === 'place_ship' || selCard.effectType === 'place_villager' || selCard.effectType === 'move_priest');
+              return isMoveCard && !moveMode ? (
+                <div className="flex-shrink-0 flex flex-col gap-2 justify-center items-stretch w-[120px] sm:w-[130px]">
+                  <button
+                    onClick={() => setMoveAction('place')}
+                    className="flex-1 bg-teal-100 border-2 border-teal-500 rounded-xl p-2 flex flex-col items-center justify-center hover:bg-teal-200 transition cursor-pointer min-h-[70px]"
+                  >
+                    <span className="text-2xl">🆕</span>
+                    <span className="font-bold text-xs text-teal-900 uppercase mt-1">Place</span>
+                  </button>
+                  <button
+                    onClick={() => setMoveAction('move')}
+                    className="flex-1 bg-purple-100 border-2 border-purple-500 rounded-xl p-2 flex flex-col items-center justify-center hover:bg-purple-200 transition cursor-pointer min-h-[70px]"
+                  >
+                    <span className="text-2xl">🚚</span>
+                    <span className="font-bold text-xs text-purple-900 uppercase mt-1">Move</span>
+                  </button>
+                </div>
+              ) : null;
+            })()}
           </div>
         )}
       </footer>

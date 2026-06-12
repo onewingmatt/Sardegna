@@ -63,7 +63,7 @@ export interface CharacterCard {
   name: string;
   effectDescription: string;
   // A string ID for the effect logic to parse
-  effectType: 'move_ship' | 'place_villager' | 'sentinel' | 'move_priest' | 'place_fort' | 'place_village' | string;
+  effectType: 'move_ship' | 'place_villager' | 'sentinel' | 'move_priest' | 'place_fort' | 'place_village' | 'queen' | 'architect' | string;
 }
 
 export interface FortCard {
