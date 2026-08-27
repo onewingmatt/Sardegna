@@ -9,7 +9,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev": "npm run dev --workspaces --if-present",
-    "start": "npm run start --workspace=apps/backend"
+    "start": "npm run start --workspace=apps/backend",
+    "audit": "ts-node scripts/independent-rules-check.ts"
   },
   "dependencies": {
   }
