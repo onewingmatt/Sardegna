@@ -56,6 +56,7 @@ const HARBOR_CONNECTIONS: Record<string, string[]> = {
   h3: ['p4'],
   h4: ['p10'],
   h5: ['p9'],
+  h6: ['p15'],
 };
 
 

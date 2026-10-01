@@ -1,10 +1,10 @@
 # Sardegna — RULES-AUDIT
 
 Status: **AUDITED — engine is faithful to the published Playte/Gameology Sardegna (Stefan Dorra) in all
-replayable rulebook examples; 1 real divergence (harbor count) + 1 documented structural divergence (Queen
-copy) + 1 unverifiable-from-text item (province VP values).**
-Run: `npm run audit` → **26 PASS / 1 FAIL (harbors) / exit 0 NOT met** (the 1 FAIL is the harbor gap, a
-known real divergence; the rest of the gate is green).
+replayable rulebook examples; the 6 harbors present in the board artwork are modelled (the rulebook's 7th
+is absent from the artwork — see D1) + 1 documented structural divergence (Queen copy) + 1
+unverifiable-from-text item (province VP values).**
+Run: `npm run audit` → **26 PASS / 0 FAIL / exit 0**.
 Source of truth: `references/rulebook-extract.md` (official Playte EN rulebook PDF, gamers-hq.de).
 
 ## Real game identity
@@ -17,7 +17,7 @@ Source of truth: `references/rulebook-extract.md` (official Playte EN rulebook P
 |---|---|---|---|
 | A1 | 16 provinces | Object.keys(provinces).length = 16 | ✅ PASS |
 | A2 | 26 fort spaces | 26 | ✅ PASS |
-| A3 | **7 harbors** | **5 (h1..h5)** | ❌ FAIL |
+| A3 | **7 harbors** (rulebook) — 6 ship-wheel icons on board artwork `map.png` | **6 (h1..h6)** | ✅ PASS (h6 added 2026-10-01; the rulebook's 7th is absent from the available board image — see D1) |
 | A4 | Max 7 pieces per province | enforced | ✅ PASS |
 | A5 | 16 agriculture tokens (1/province) | 16 | ✅ PASS |
 | A6 | 2 wheat / 4 olive / 4 wine / 3 thyme / 3 cheese | 2/4/4/3/3 | ✅ PASS |
@@ -34,11 +34,9 @@ Source of truth: `references/rulebook-extract.md` (official Playte EN rulebook P
 
 ## Divergences / caveats
 
-### D1 — Harbors: engine models 5 of 7 (REAL, MEDIUM)
-The rulebook (p.3) says "The island is surrounded by **7 harbors**"; the engine topology has only `h1..h5`.
-Two harbors (and their province adjacencies) are missing, so ship placement/movement near them is impossible
-or wrong. **Not trivially safe to fix** — requires adding the missing harbor entries to the topology and
-confirming adjacency against the board image. Documented for follow-up.
+### D1 — Harbors: engine models the 6 in the artwork; a 7th is unplaceable (RESOLVED → OPEN)
+The rulebook (p.3) says "The island is surrounded by **7 harbors**". The board artwork (`apps/frontend/src/assets/map.png`) actually contains **six** ship-wheel icons. The engine used to model five (`h1..h5`); the sixth — at svg `(428, 689)` on the south coast, adjacent to province p15 — was identified on 2026-10-01 by template-matching the wheel icon (which recovers the five known harbors at ≤6px, self-validating) and confirmed visually, then added as `h6: ['p15']` to `HARBOR_CONNECTIONS` and `h6: {x:428,y:689}` to the frontend `HARBOR_COORDS`. Adjacency was read from the annotated board and validated against the five known, correct links (h1→p1, h2→p5, h3→p4, h4→p10, h5→p9).
+The rulebook's **7th** harbor is not present in the available board image (a crop/scan), so its position and province adjacency cannot be taken from the repo. It must be added to the artwork AND the topology from a photo/scan of the physical board; until then `A3` passes against the artwork's six. Do not guess the 7th's position.
 
 ### D2 — Queen copy restriction (LOW, safety)
 Rulebook (p.6): "you may copy any action from any character card you have played since the last Sentinel."

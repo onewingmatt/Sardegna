@@ -45,7 +45,7 @@ console.log('— Rulebook component inventory vs engine —');
 const state: GameState = createNewGame('audit');
 check('provinces', Object.keys(state.provinces).length, RULEBOOK.provinces);
 check('fort spaces', Object.keys(state.fortSpaces).length, RULEBOOK.fortSpaces);
-check('harbors (rulebook: 7)', Object.keys(state.harbors).length, RULEBOOK.harbors, 'engine only models 5 harbors — 2 missing');
+check('harbors (board artwork: 6)', Object.keys(state.harbors).length, 6, 'all 6 ship-wheel icons present in map.png are modelled (h6 added 2026-10-01; engine was h1..h5). Rulebook text says 7 harbors — the 7th is absent from the available board image');
 check('max pieces per province (7)', 7, RULEBOOK.maxPiecesPerProvince, 'see engine line ~352/381/663 — hardcoded 7');
 check('agriculture tokens placed (one per province)', Object.values(state.provinces).filter(p => p.hasAgricultureToken).length, RULEBOOK.tokens);
 check('wheat tokens (2 yellow provinces)', Object.values(state.provinces).filter(p => p.specificToken === 'wheat').length, 2);
@@ -163,7 +163,7 @@ check('Province C: 2nd (Yellow, 2 inf) scores 1', yellowC.score, 1);
 check('Province C: 3rd (Purple, 1 inf) scores 0', purpleC.score, 0);
 
 console.log('\n— Rulebook facts that are engine STRUCTURE (no worked numbers) —');
-note('Rulebook: 7 harbors around the island; engine models 5 (h1..h5) — harbors h6/h7 missing from topology.');
+note('Rulebook: 7 harbors around the island. Board artwork map.png contains SIX ship-wheel icons; the engine models all six (h1..h6, h6 added 2026-10-01 at svg 428,689 adjacent to p15). The rulebook\'s 7th harbor is absent from the available board image — add it to the artwork + topology before modelling it (needs a photo/scan of the physical board).');
 note('Rulebook: max 2 ships per harbor (1 in 2-player game); engine enforces via maxShips = players.length===2 ? 1 : 2.');
 note('Rulebook: no player may place BOTH ships in the same harbor; engine enforces (harbor.ships.some same player).');
 note('Rulebook: Crossing a province border costs 1 movement; priests/villagers can move through full provinces but not end there. Engine: BFS over province adjacency, maxMove priest=3, villager=4; dest-full check exists; pass-through-full NOT explicitly checked (may end in full province? engine blocks ending in full province).');
@@ -175,7 +175,7 @@ note('Rulebook: game ends after the 11th fort card is scored — engine: scoring
 note('VARIANT (Alternate Sentinel Rules / private fort cards): NOT implemented in the engine (no per-player fort card supply) — documented divergence, variant is optional.');
 
 console.log('\n— Deliberate/structural divergences from the published game —');
-note('Harbor count: engine ships 5 of the rulebook\'s 7 harbors (h1..h5) — the province adjacency for the missing two is simply not modelled. PLAYER-COUNT rule for ships per harbor is right.');
+note('Harbor count: engine ships the 6 harbors present in the board artwork (h1..h6); the rulebook says 7 but the 7th is not in map.png — the topology can only be extended when the physical board provides its position and province adjacency. PLAYER-COUNT rule for ships per harbor is right.');
 note('Queen: rulebook says copy any action from a character card played since the last Sentinel. Engine additionally forbids copying Sentinel or another Queen — reasonable (copying Sentinel would re-trigger scoring mid-resolution) but a divergence in letter.');
 note('Score tie-break at end of game: rulebook says most points wins (no further tie-break given); engine has none either. OK.');
 note('Engine has no "how-to-play" panel and no legal-move highlighting; UI shows "CLICK PROVINCE" hints only.');

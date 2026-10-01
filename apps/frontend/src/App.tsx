@@ -31,6 +31,7 @@ const HARBOR_COORDS = {
   h3: { x: 205, y: 255 },
   h4: { x: 621, y: 371 },
   h5: { x: 206, y: 441 },
+  h6: { x: 428, y: 689 },
 };
 
 const FORT_COORDS = {
@@ -232,11 +233,6 @@ function App() {
     if (mode === 'place') {
       setSourcePieceId(null); // No source needed for place
     }
-  };
-
-  // Handle clicking a piece on the board to select as move source
-  const selectMoveSource = (provinceId: string) => {
-    setSourcePieceId(provinceId);
   };
 
   const handleWheel = (e: React.WheelEvent) => {
